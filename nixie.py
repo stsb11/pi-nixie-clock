@@ -70,12 +70,70 @@ def showOutput(hrs, mins, secs):
             global bDots
             GPIO.output(tDots, 0)
             GPIO.output(bDots, 1)
-            time.sleep(5)
         else:
 	    lightUp(currDigit, 0)
 	    lightUp(currDigit + 1, item)
 
         currDigit = currDigit + 2
+
+def slideOff(hrs, mins, secs):
+    # Makes current time 'slide off' the display.
+    global tDots
+    global bDots
+    GPIO.output(tDots, 0)
+    GPIO.output(bDots, 0)
+
+    timeArr = [hrs, mins, secs]
+    y = 6
+    for x in range(1, -7, -1):
+        currDigit = x
+        for item in timeArr:
+            if item > 9 and item < 100:
+                lightUp(currDigit, item // 10)
+	        lightUp(currDigit + 1, item - ((item // 10) * 10))
+            elif item > 2000:
+                # Deals with the clock displaying the date.
+                num = item - 2000
+                lightUp(currDigit, num // 10)
+	        lightUp(currDigit + 1, num - ((num // 10) * 10))
+            else:
+	        lightUp(currDigit, 0)
+	        lightUp(currDigit + 1, item)
+                
+            currDigit = currDigit + 2
+            
+        # Blank the right-most digits.
+        for n in range(6, y, -1):
+            lightUp(n, 10)
+        y = y - 1
+        
+        time.sleep(0.1)
+
+    # Then, do something similar to slide the date onto the display.
+    now = datetime.datetime.now()
+    day = now.day
+    month = now.month
+    year = now.year
+    timeArr = [day, month, year]
+
+    for x in range(6, 0, -1):
+        currDigit = x
+        for item in timeArr:
+            if item > 9 and item < 100:
+                lightUp(currDigit, item // 10)
+	        lightUp(currDigit + 1, item - ((item // 10) * 10))
+            elif item > 2000:
+                # Deals with the clock displaying the date.
+                num = item - 2000
+                lightUp(currDigit, num // 10)
+	        lightUp(currDigit + 1, num - ((num // 10) * 10))
+            else:
+	        lightUp(currDigit, 0)
+	        lightUp(currDigit + 1, item)
+                
+            currDigit = currDigit + 2
+        
+        time.sleep(0.1)    
 
 def cycleNums():
     # Get each tube to show 10 different digits at (pseudo)random, over the space of 1sec.
@@ -93,21 +151,62 @@ def cycleNums():
         
     print("Cathode protection cycle complete.")
 
+def cycleNums2():
+    # Get each tube to show 10 different digits at (pseudo)random, over the space of 1sec.
+    print("Cathode protection cycle starting...")
+    global tDots
+    global bDots
+    GPIO.output(tDots, 0)
+    GPIO.output(bDots, 0)
+
+    now = datetime.datetime.now()
+    hrs = now.hour
+    mins = now.minute
+    secs = now.second
+    timeArr = [hrs, mins, secs]
+    
+    startAt = 1
+    endAt = 2
+
+    for digits in range(7):
+        for x in range(10):
+            currDigit = 1    
+            for item in timeArr:
+                if item > 9 and item < 100 and currDigit < endAt:
+                    lightUp(currDigit, item // 10)
+	            lightUp(currDigit + 1, item - ((item // 10) * 10))
+                else:
+                    if currDigit < endAt:
+	                lightUp(currDigit, 0)
+	                lightUp(currDigit + 1, item)
+                currDigit = currDigit + 2
+            
+            for lamp in range(startAt, endAt):
+                lightUp(lamp, random.randint(0, 9))
+	    time.sleep(0.015)
+            
+        endAt = endAt + 1
+        if endAt > 4:
+            startAt = startAt + 1
+
+    print("Cathode protection cycle complete.")
+
 def lightUp(lamp, numToShow):
     global lamps
     # Pass in which Nixie tube (1-6) and the digit to show (0 to 9)
     # Showing a digit where the value is >9 turns it off, when using the K155ID1 IC.
-    lamp = lamp - 1
-    binNum = str(bin(numToShow))[2:]   # binNum will be something like '10'
+    if lamp > 0 and lamp < 7:
+        lamp = lamp - 1
+        binNum = str(bin(numToShow))[2:]   # binNum will be something like '10'
 
-    while len(binNum) < 4:  # Add leading zeroes to get it to 4 bits.
-        binNum = '0' + binNum 
+        while len(binNum) < 4:  # Add leading zeroes to get it to 4 bits.
+            binNum = '0' + binNum 
         
-    GPIO.output(lamps[lamp][0], int(binNum[0]))
-    GPIO.output(lamps[lamp][1], int(binNum[1]))
-    GPIO.output(lamps[lamp][2], int(binNum[2]))
-    GPIO.output(lamps[lamp][3], int(binNum[3]))    
-    # print("Lamp " + str(lamp + 1) + " showing " + str(numToShow))
+        GPIO.output(lamps[lamp][0], int(binNum[0]))
+        GPIO.output(lamps[lamp][1], int(binNum[1]))
+        GPIO.output(lamps[lamp][2], int(binNum[2]))
+        GPIO.output(lamps[lamp][3], int(binNum[3]))    
+        # print("Lamp " + str(lamp + 1) + " showing " + str(numToShow))
 
 
 # *********************************
@@ -132,9 +231,11 @@ while True:
     #print("Date: " + str(day) + "/" + str(month) + "/" + str(year))
     #print("----")
 
-    if secs==15 or secs==45:
+    if secs==15:
         # Cycle the tubes through different digits to prevent cathode poisoning.
-	cycleNums()    
+        slideOff(hrs, mins, secs)
+    elif secs==20:
+        cycleNums2()
     elif secs >= 16 and secs <= 20: # or (secs >= 46 and secs <= 50)):
         # Show the date at quarter past each minute for 5s
 	showOutput (day, month, year)
