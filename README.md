@@ -13,7 +13,7 @@ Raspberry Pi powered Nixie clock project
 # Software
 * Use the dTest.py to ensure that everything is working. It'll pulse the dots on and off, and show all digits.
 * Set up as a cron job (@reboot	  /home/pi/pi-nixie-clock/nixie.py) on startup so you can plug and unplug it.
-* Laser-cut a nice box to keep it all in.
+* Laser-cut a nice box to keep it all in. 
 
 # Updates
 * 9/6/19 - Added some scrolling animations for when the date is shown, and disguised the cathode protection as an animation.
