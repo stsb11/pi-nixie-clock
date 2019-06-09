@@ -168,7 +168,7 @@ def cycleNums2():
     startAt = 1
     endAt = 2
 
-    for digits in range(7):
+    for digits in range(9):
         for x in range(10):
             currDigit = 1    
             for item in timeArr:
