@@ -7,7 +7,7 @@ GPIO.setmode(GPIO.BCM) # I.e. the 5V pin in the top-left corner is referred to a
 GPIO.setwarnings(False)
 
 bbcWeather = "2643029"
-maxDotBright = 60   # Maximum brightness (100max) of INS-1 dots.
+maxDotBright = 100   # Maximum brightness (100max) of INS-1 dots.
 
 # Wiring below, to K155ID1 IC ABCD inputs (A is LSB, D is MSB).
 # Each sub-list goes from MSB to LSB (D to A). 
@@ -53,27 +53,71 @@ GPIO.setup(tDots, GPIO.OUT)
 pbDots = GPIO.PWM(bDots, 50)
 ptDots = GPIO.PWM(tDots, 50)
 
+weatherOk = False   # Did the weather work the last time we tried to get it?
 # ****************************
 # Functions start here
 # ********************
 
 def weather(areaCode):
     url = "https://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
-
-    NewsFeed = feedparser.parse(url)
-    entry = NewsFeed.entries[0]
-    weatherString = entry.description
-
-    tempStart = weatherString.find(" ") + 1
-    tempEnd = weatherString.find("C") - 1
-    temperature = int(weatherString[tempStart:tempEnd])
-
-    humidStart = weatherString.find("Humidity: ") + 9
-    humidEnd = weatherString.find("%")
-    humidity = int(weatherString[humidStart:humidEnd])
-    print("Temp: " + str(temperature) + ". H:" + str(humidity) + ".")
-    showOutput(humidity, -1, abs(temperature))
     
+    global ptDots, pbDots, weatherOk
+
+    try:
+        NewsFeed = feedparser.parse(url)
+        entry = NewsFeed.entries[0]
+        weatherString = entry.description
+        tempStart = weatherString.find(" ") + 1
+        tempEnd = weatherString.find("C") - 1
+        temperature = int(weatherString[tempStart:tempEnd])
+
+        humidStart = weatherString.find("Humidity: ") + 9
+        humidEnd = weatherString.find("%")
+        humidity = int(weatherString[humidStart:humidEnd])
+        print("Temp: " + str(temperature) + ". H:" + str(humidity) + ".")
+        weatherOk =  True
+        pbDots.start(0)
+        ptDots.start(0)
+        showOutput(humidity, -1, abs(temperature))
+        return True
+    except:
+        # No weather data available.
+        weatherOk = False
+        return False
+
+def pressure(areaCode):
+    url = "https://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
+    
+    global ptDots, pbDots, weatherOk
+
+    if 5>4:
+        NewsFeed = feedparser.parse(url)
+        entry = NewsFeed.entries[0]
+        weatherString = entry.description
+        pressStart = weatherString.find("Pressure: ") + 10
+        pressEnd = weatherString.find("mb")
+        pressure = weatherString[pressStart:pressEnd]
+
+        if len(pressure) < 4:
+            pressure = "0" + pressure
+            
+        weatherOk =  True
+        pbDots.start(0)
+        ptDots.start(0)
+
+        # Show the air pressure on the display.
+        lightUp(1, -1)
+
+        if int(pressure) >= 1000:
+            lightUp(2, 1)
+        else:
+            lightUp(2, -1)
+
+        lightUp(3, int(pressure[1:2]))
+        lightUp(4, int(pressure[2:3]))
+        lightUp(5, int(pressure[3:4]))
+        lightUp(6, -1)
+        return True
     
 def showOutput(hrs, mins, secs):
     # Function to illuminate tubes
@@ -215,7 +259,7 @@ def lightUp(lamp, numToShow):
     if lamp > 0 and lamp < 7:
         lamp = lamp - 1
 
-        if numToShow >= 0:
+        if numToShow >= 0 and numToShow <= 9:
             binNum = str(bin(numToShow))[2:]   # binNum will be something like '10'
             #print("numToShow is " + str(numToShow) + " on lamp " + str(lamp) + ".")
 
@@ -232,7 +276,7 @@ def lightUp(lamp, numToShow):
             GPIO.output(lamps[lamp][1], 1)
             GPIO.output(lamps[lamp][2], 1)
             GPIO.output(lamps[lamp][3], 1)
-            # Turn the lamp in question off if <0 is received.
+            # Turn the lamp in question off if < 0 or > 9 is received.
             
 
 # *********************************
@@ -271,11 +315,28 @@ while True:
         #pbDots.start(0)
         #ptDots.start(0)
 	showOutput (day, month, year)
-    elif secs==45 or secs == 51:
+    elif (secs==45 or secs == 52) and weatherOk == True:
+        pbDots.start(0)
+        ptDots.start(0)
         cycleNums()
-    elif secs > 45 and secs <=50:
+    elif secs > 45 and secs <52:
         # Show the local humidity (left) and temperature (right)
-        weather(bbcWeather)
+        if secs > 45 and secs < 49:
+            ok = weather(bbcWeather)
+        else:
+            ok = pressure(bbcWeather)
+        
+        if ok == False:
+            # If the RSS feed isn't working, just keep showing the time,
+	    showOutput(hrs, mins, secs)
+            # Deal with the dots...
+            duty = int((milli / 999999) * maxDotBright)
+            if milli < 500000:
+                pbDots.start(duty)
+                ptDots.start(duty)
+            else:
+                pbDots.start(maxDotBright - duty)
+                ptDots.start(maxDotBright - duty)
     else:
         # Show the time on the tubes.
 	showOutput(hrs, mins, secs)
@@ -288,4 +349,4 @@ while True:
             pbDots.start(maxDotBright - duty)
             ptDots.start(maxDotBright - duty)
 
-    time.sleep(0.05)
+    #time.sleep(0.05)
