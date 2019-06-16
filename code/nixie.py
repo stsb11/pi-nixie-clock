@@ -3,11 +3,12 @@ import datetime, random, time
 import RPi.GPIO as GPIO
 import feedparser
 
-GPIO.setmode(GPIO.BCM) # I.e. the 5V pin in the top-left corner is referred to as 2.
-GPIO.setwarnings(False)
-
-bbcWeather = "2643029"
-maxDotBright = 100   # Maximum brightness (100max) of INS-1 dots.
+# ***************************
+# User configurable options.
+# ************
+bbcWeather = "2643029"  # BBC weather location code, for temp/humidity and pressure. 
+maxDotBright = 80       # Maximum brightness (0 - 100) of INS-1 dots.
+onTime = 6              # Time to turn display back on (display goes off at midnight). Set to 0 for never off
 
 # Wiring below, to K155ID1 IC ABCD inputs (A is LSB, D is MSB).
 # Each sub-list goes from MSB to LSB (D to A). 
@@ -43,6 +44,8 @@ bDots = 26
 tDots = 19
 
 lamps = [lamp3, lamp2, lamp1, lamp4, lamp5, lamp6]
+GPIO.setmode(GPIO.BCM) # The 5V pin in the top-left corner is referred to as 2.
+GPIO.setwarnings(False)
 
 for lamp in lamps:
     for pin in lamp:
@@ -50,8 +53,8 @@ for lamp in lamps:
 
 GPIO.setup(bDots, GPIO.OUT)
 GPIO.setup(tDots, GPIO.OUT)
-pbDots = GPIO.PWM(bDots, 50)
-ptDots = GPIO.PWM(tDots, 50)
+pbDots = GPIO.PWM(bDots, 60)
+ptDots = GPIO.PWM(tDots, 60)
 
 weatherOk = False   # Did the weather work the last time we tried to get it?
 # ****************************
@@ -74,7 +77,7 @@ def weather(areaCode):
         humidStart = weatherString.find("Humidity: ") + 9
         humidEnd = weatherString.find("%")
         humidity = int(weatherString[humidStart:humidEnd])
-        print("Temp: " + str(temperature) + ". H:" + str(humidity) + ".")
+        #print("Temp: " + str(temperature) + ". H:" + str(humidity) + ".")
         weatherOk =  True
         pbDots.start(0)
         ptDots.start(0)
@@ -297,37 +300,47 @@ while True:
     year = now.year
 
     # Debug output...
-    #print("Time: " + str(hrs) + ":" + str(mins) + ":" + str(secs))
-    #print("Date: " + str(day) + "/" + str(month) + "/" + str(year))
-    #print("----")
+    # print("Time: " + str(hrs) + ":" + str(mins) + ":" + str(secs))
+    # print("Date: " + str(day) + "/" + str(month) + "/" + str(year))
+    # print("----")
 
-    if secs==15:
-        # Cycle the tubes through different digits to prevent cathode poisoning.
-        pbDots.start(0)
-        ptDots.start(0)
-        slideOff(hrs, mins, secs)
-    elif secs==20:
-        pbDots.start(0)
-        ptDots.start(0)
-        cycleNums2()
-    elif secs >= 16 and secs <= 20: # or (secs >= 46 and secs <= 50)):
-        # Show the date at quarter past each minute for 5s
-        #pbDots.start(0)
-        #ptDots.start(0)
-	showOutput (day, month, year)
-    elif (secs==45 or secs == 52) and weatherOk == True:
-        pbDots.start(0)
-        ptDots.start(0)
-        cycleNums()
-    elif secs > 45 and secs <52:
-        # Show the local humidity (left) and temperature (right)
-        if secs > 45 and secs < 49:
-            ok = weather(bbcWeather)
-        else:
-            ok = pressure(bbcWeather)
+    if hrs >= onTime:
+        if secs==15:
+            # Cycle the tubes through different digits to prevent cathode poisoning.
+            pbDots.start(0)
+            ptDots.start(0)
+            slideOff(hrs, mins, secs)
+        elif secs==20:
+            pbDots.start(0)
+            ptDots.start(0)
+            cycleNums2()
+        elif secs >= 16 and secs <= 20:
+            # Show the date at quarter past each minute for 5s
+	    showOutput (day, month, year)
+        elif (secs==45 or secs == 52) and weatherOk == True:
+            pbDots.start(0)
+            ptDots.start(0)
+            cycleNums()
+        elif secs > 45 and secs <52:
+            # Show the local humidity (left) and temperature (right)
+            if secs > 45 and secs < 49:
+                ok = weather(bbcWeather)
+            else:
+                ok = pressure(bbcWeather)
         
-        if ok == False:
-            # If the RSS feed isn't working, just keep showing the time,
+            if ok == False:
+                # If the RSS feed isn't working, just keep showing the time,
+	        showOutput(hrs, mins, secs)
+                # Deal with the dots...
+                duty = int((milli / 999999) * maxDotBright)
+                if milli < 500000:
+                    pbDots.start(duty)
+                    ptDots.start(duty)
+                else:
+                    pbDots.start(maxDotBright - duty)
+                    ptDots.start(maxDotBright - duty)
+        else:
+            # Show the time on the tubes.
 	    showOutput(hrs, mins, secs)
             # Deal with the dots...
             duty = int((milli / 999999) * maxDotBright)
@@ -337,16 +350,15 @@ while True:
             else:
                 pbDots.start(maxDotBright - duty)
                 ptDots.start(maxDotBright - duty)
-    else:
-        # Show the time on the tubes.
-	showOutput(hrs, mins, secs)
-        # Deal with the dots...
-        duty = int((milli / 999999) * maxDotBright)
-        if milli < 500000:
-            pbDots.start(duty)
-            ptDots.start(duty)
-        else:
-            pbDots.start(maxDotBright - duty)
-            ptDots.start(maxDotBright - duty)
 
-    #time.sleep(0.05)
+        #time.sleep(0.05)
+    else:
+        # If the display is off, turn the dots and digits off too. 
+        pbDots.start(0)
+        ptDots.start(0)
+        lightUp(1, -1)
+        lightUp(2, -1)
+        lightUp(3, -1)
+        lightUp(4, -1)
+        lightUp(5, -1)
+        lightUp(6, -1)
