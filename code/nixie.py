@@ -2,12 +2,13 @@
 import datetime, random, time
 import RPi.GPIO as GPIO
 import feedparser
+import commands
 
 # ***************************
 # User configurable options.
 # ************
 bbcWeather = "2643029"  # BBC weather location code, for temp/humidity and pressure. 
-maxDotBright = 80       # Maximum brightness (0 - 100) of INS-1 dots.
+maxDotBright = 60       # Maximum brightness (0 - 100) of INS-1 dots.
 onTime = 6              # Time to turn display back on (display goes off at midnight). Set to 0 for never off
 
 # Wiring below, to K155ID1 IC ABCD inputs (A is LSB, D is MSB).
@@ -62,7 +63,7 @@ weatherOk = False   # Did the weather work the last time we tried to get it?
 # ********************
 
 def weather(areaCode):
-    url = "https://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
+    url = "http://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
     
     global ptDots, pbDots, weatherOk
 
@@ -81,7 +82,10 @@ def weather(areaCode):
         weatherOk =  True
         pbDots.start(0)
         ptDots.start(0)
-        showOutput(humidity, -1, abs(temperature))
+        
+        showNum()
+        showNum(str(humidity), 'l')
+        showNum(str(abs(temperature)), 'r')
         return True
     except:
         # No weather data available.
@@ -89,11 +93,11 @@ def weather(areaCode):
         return False
 
 def pressure(areaCode):
-    url = "https://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
+    url = "http://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
     
     global ptDots, pbDots, weatherOk
 
-    if 5>4:
+    try:
         NewsFeed = feedparser.parse(url)
         entry = NewsFeed.entries[0]
         weatherString = entry.description
@@ -109,18 +113,13 @@ def pressure(areaCode):
         ptDots.start(0)
 
         # Show the air pressure on the display.
-        lightUp(1, -1)
-
-        if int(pressure) >= 1000:
-            lightUp(2, 1)
-        else:
-            lightUp(2, -1)
-
-        lightUp(3, int(pressure[1:2]))
-        lightUp(4, int(pressure[2:3]))
-        lightUp(5, int(pressure[3:4]))
-        lightUp(6, -1)
+        showNum()
+        showNum(pressure, 'c')
         return True
+    except:
+        # No weather data available.
+        weatherOk = False
+        return False
     
 def showOutput(hrs, mins, secs):
     # Function to illuminate tubes
@@ -281,24 +280,121 @@ def lightUp(lamp, numToShow):
             GPIO.output(lamps[lamp][3], 1)
             # Turn the lamp in question off if < 0 or > 9 is received.
             
+def showNum(inputString = '------', alignment = 'r', leadingZeros = False):
+    # Function to show up to 6 digits on the display.
+    # inputString - e.g. '99--42', '123'. Hyphens denote to leave off.
+    # alignment - 'l', 'c' or 'r'.
+    # leadingZeros - fill display with zeros. Only relevant for 'r' align.
+    # NOTE: Calling with no parameters will blank the display. 
+    strLen = len(inputString)
+    
+    if alignment == 'c':
+        if strLen == 6:
+            startFrom = 1
+        elif strLen == 5:
+            startFrom = 2
+        elif strLen == 4:
+            startFrom = 2
+        elif strLen == 3:
+            startFrom = 3
+        elif strLen == 2:
+            startFrom = 3
+        elif strLen == 1:
+            startFrom = 4
+        else:
+            startFrom = 4
+
+        currDigit = 0
+
+        for x in range(startFrom, startFrom + strLen):
+            if inputString[currDigit] != '-':
+                lightUp(x, int(inputString[currDigit]))
+            else:
+                lightUp(x, -1)
+
+            currDigit = currDigit + 1
+    elif alignment == 'l':
+        startFrom = 1
+        currDigit = 0
+
+        for x in range(startFrom, strLen + 1):
+            if inputString[currDigit] != '-':
+                lightUp(x, int(inputString[currDigit]))
+            else:
+                lightUp(x, -1)
+
+            currDigit = currDigit + 1
+    else:
+        if leadingZeros == True:
+            for x in range (1, 7):
+                lightUp(x, 0)
+                
+        startFrom = 7 - strLen
+        currDigit = 0
+
+        for x in range(startFrom, 7):
+            if inputString[currDigit] != '-':
+                lightUp(x, int(inputString[currDigit]))
+            else:
+                lightUp(x, -1)
+                
+            currDigit = currDigit + 1
+        
+        
+def showIP():
+    # Show IP address on startup, so we can get in.
+    address = commands.getoutput('hostname -I')
+    addEnd = address.find(" ") +1
+    address = address[:addEnd]
+    octs = []
+    for i in range(4):
+        addEnd = address.find(".")
+        octs.append(address[0:addEnd])
+        address = address[addEnd + 1:]
+
+    showNum()
+    showNum(octs[0], 'l')
+    showNum(octs[1], 'r')
+    time.sleep(3)
+
+    showNum()
+    showNum(octs[2], 'l')
+    showNum(octs[3], 'r')
+    time.sleep(3)
+
 
 # *********************************
 # Main loop starts here
 # ***************
 
-while True:
-    # approximately every ten times per second, update the display
+# Countdown. Here for several reasons...
+# 1. Serves to ensure an IP address has been grabbed
+# 2. Avoids any PWM flicker, as most of the boot-up heavy CPU load is done.
+# 3. Warms the INS-1 tubes by driving them at full brightness for a few seconds. Seems to make them less likely to flicker.
+pbDots.start(100)
+ptDots.start(100)
 
+for n in range(9, -1, -1):
+    for x in range(1, 7):
+        lightUp(x, n)
+        time.sleep(0.6)
+
+try:
+    # Try and show the IP address on the display.
+    # Useful in case the user needs to SSH into it in future.
+    pbDots.start(0)
+    ptDots.start(0)
+    showIP()
+except:
+    print("No IP available")
+    
+while True:
     now = datetime.datetime.now()
     hrs = now.hour
     mins = now.minute
     secs = now.second
     milli = float(now.strftime('%f'))
     
-    day = now.day
-    month = now.month
-    year = now.year
-
     # Debug output...
     # print("Time: " + str(hrs) + ":" + str(mins) + ":" + str(secs))
     # print("Date: " + str(day) + "/" + str(month) + "/" + str(year))
@@ -316,7 +412,7 @@ while True:
             cycleNums2()
         elif secs >= 16 and secs <= 20:
             # Show the date at quarter past each minute for 5s
-	    showOutput (day, month, year)
+	    showOutput (now.day, now.month, now.year)
         elif (secs==45 or secs == 52) and weatherOk == True:
             pbDots.start(0)
             ptDots.start(0)
@@ -350,8 +446,6 @@ while True:
             else:
                 pbDots.start(maxDotBright - duty)
                 ptDots.start(maxDotBright - duty)
-
-        #time.sleep(0.05)
     else:
         # If the display is off, turn the dots and digits off too. 
         pbDots.start(0)
