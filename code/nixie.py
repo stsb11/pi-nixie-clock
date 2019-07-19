@@ -1,4 +1,4 @@
-# Nixie Pi clock, v0.1
+# Nixie Pi clock, v1.1
 import datetime, random, time
 import RPi.GPIO as GPIO
 import feedparser
@@ -8,7 +8,7 @@ import commands
 # User configurable options.
 # ************
 bbcWeather = "2643029"  # BBC weather location code, for temp/humidity and pressure. 
-maxDotBright = 60       # Maximum brightness (0 - 100) of INS-1 dots.
+maxDotBright = 70       # Maximum brightness (0 - 100) of INS-1 dots.
 onTime = 6              # Time to turn display back on (display goes off at midnight). Set to 0 for never off
 
 # Wiring below, to K155ID1 IC ABCD inputs (A is LSB, D is MSB).
@@ -57,14 +57,16 @@ GPIO.setup(tDots, GPIO.OUT)
 pbDots = GPIO.PWM(bDots, 60)
 ptDots = GPIO.PWM(tDots, 60)
 
-weatherOk = False   # Did the weather work the last time we tried to get it?
+weatherOk = False   # Variable to remember whether the weather worked the last time we tried to get it.
 # ****************************
 # Functions start here
 # ********************
 
 def weather(areaCode):
+    # areaCode is the BBC Weather code (from the desired region's URL).
+    # Picks up BBC humidity and temperature data, then shows on the tubes.
+    # Returns True if the BBC weather is rendered to the screen correctly.
     url = "http://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
-    
     global ptDots, pbDots, weatherOk
 
     try:
@@ -75,9 +77,20 @@ def weather(areaCode):
         tempEnd = weatherString.find("C") - 1
         temperature = int(weatherString[tempStart:tempEnd])
 
-        humidStart = weatherString.find("Humidity: ") + 9
-        humidEnd = weatherString.find("%")
-        humidity = int(weatherString[humidStart:humidEnd])
+        # humidStart = weatherString.find("Humidity: ") + 9
+        # humidEnd = weatherString.find("%")
+        # humidity = int(weatherString[humidStart:humidEnd])
+
+        # NOTE: If not taking a feed from a sense hat, uncomment the above
+        # and comment down to and including the .close() line below.
+        f = open('/home/pi/hFile.txt')
+        humidity = 0
+        for line in f:
+            line = line.rstrip()
+            humidity = str(int(float(line)))
+
+        f.close()
+        
         #print("Temp: " + str(temperature) + ". H:" + str(humidity) + ".")
         weatherOk =  True
         pbDots.start(0)
@@ -92,9 +105,35 @@ def weather(areaCode):
         weatherOk = False
         return False
 
-def pressure(areaCode):
-    url = "http://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
+def pressure():
+    # Parses a .txt file (deposited automatically in /home/pi/) that contains the last 24 hrs of air pressure data.
+    # If the SenseHat pi is on, we'll get live air pressure data dropped in every 7.5 mins or so.
+    # Returns True if this works sucessfully. 
+    global ptDots, pbDots, weatherOk
+    pressure = 0000
     
+    try:    
+        f = open('/home/pi/pFile.txt')
+        
+        for line in f:
+            line = line.rstrip()
+            pressure = str(int(float(line)))
+        f.close()
+    except:
+        print("Problem reading pressure log file")
+        
+    # Show the air pressure on the display.
+    showNum()
+    showNum(pressure, 'c')
+    pbDots.start(0)
+    ptDots.start(0)
+    weatherOk =  True
+    return True
+
+def oldPressure():
+    # ALTERNATIVE VERSION 
+    # If required, swap the names of this function and the 'pressure()' function to get BBC Weather instead.
+    url = "http://weather-broker-cdn.api.bbci.co.uk/en/observation/rss/" + areaCode
     global ptDots, pbDots, weatherOk
 
     try:
@@ -208,7 +247,7 @@ def slideOff(hrs, mins, secs):
 
 def cycleNums():
     # Get each tube to show 10 different digits at (pseudo)random, over the space of 1sec.
-    print("Cathode protection cycle starting...")
+    print("Cathode protection cycle (old style) starting...")
     
     for x in range(20):
         for y in range(1, 7):
@@ -220,7 +259,7 @@ def cycleNums():
 
 def cycleNums2():
     # Get each tube to show 10 different digits at (pseudo)random, over the space of 1sec.
-    print("Cathode protection cycle starting...")
+    print("Cathode protection cycle (new style) starting...")
 
     now = datetime.datetime.now()
     hrs = now.hour
@@ -286,7 +325,7 @@ def showNum(inputString = '------', alignment = 'r', leadingZeros = False):
     # alignment - 'l', 'c' or 'r'.
     # leadingZeros - fill display with zeros. Only relevant for 'r' align.
     # NOTE: Calling with no parameters will blank the display. 
-    strLen = len(inputString)
+    strLen = len(str(inputString))
     
     if alignment == 'c':
         if strLen == 6:
@@ -422,8 +461,8 @@ while True:
             if secs > 45 and secs < 49:
                 ok = weather(bbcWeather)
             else:
-                ok = pressure(bbcWeather)
-        
+                ok = pressure()   # Add bbcWeather as parameter if using BBC weather.
+                time.sleep(3.5)   # This prevents a little flicker when the pi has to reload the .txt file over and over.     
             if ok == False:
                 # If the RSS feed isn't working, just keep showing the time,
 	        showOutput(hrs, mins, secs)
